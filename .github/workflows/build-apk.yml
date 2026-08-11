@@ -20,37 +20,99 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Extract ZIP file
+      - name: Extract & Fix Project
         run: |
-          echo "Extracting project..."
-          unzip -q "Sheko-Ready-To-Upload (1).zip" -d extracted
-          echo "Extracted files:"
-          ls -la extracted/
-
-      - name: Find Gradle project
-        run: |
-          echo "Finding project..."
-          # Find the directory containing settings.gradle
-          PROJ_DIR=$(find extracted -name "settings.gradle" -o -name "settings.gradle.kts" | head -1 | xargs dirname)
-          echo "Project found at: $PROJ_DIR"
-          echo "$PROJ_DIR" > project_path.txt
+          echo "=== Extracting ZIP ==="
+          unzip -q "Sheko-Ready-To-Upload (1).zip" -d project
+          
+          echo "=== Project structure ==="
+          find project -maxdepth 3 -type f | sort
+          
+          # Find project root
+          SETTINGS=$(find project -name "settings.gradle" -o -name "settings.gradle.kts" | head -1)
+          PROJ_DIR=$(dirname "$SETTINGS")
+          echo "Project root: $PROJ_DIR"
+          
+          # Create project-level build.gradle if missing
+          if [ ! -f "$PROJ_DIR/build.gradle" ] && [ ! -f "$PROJ_DIR/build.gradle.kts" ]; then
+            echo "Creating project-level build.gradle..."
+            cat > "$PROJ_DIR/build.gradle" << 'EOF'
+plugins {
+    id 'com.android.application' version '8.2.2' apply false
+}
+EOF
+          fi
+          
+          # Fix settings.gradle - add pluginManagement if missing
+          if [ -f "$PROJ_DIR/settings.gradle" ]; then
+            if ! grep -q "pluginManagement" "$PROJ_DIR/settings.gradle"; then
+              echo "Adding pluginManagement to settings.gradle..."
+              cat > "$PROJ_DIR/settings.gradle" << 'EOF'
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+rootProject.name = "ShekoVoiceClone"
+include ':app'
+EOF
+            fi
+          fi
+          
+          # Fix settings.gradle.kts if exists
+          if [ -f "$PROJ_DIR/settings.gradle.kts" ]; then
+            if ! grep -q "pluginManagement" "$PROJ_DIR/settings.gradle.kts"; then
+              echo "Adding pluginManagement to settings.gradle.kts..."
+              cat > "$PROJ_DIR/settings.gradle.kts" << 'EOF'
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+rootProject.name = "ShekoVoiceClone"
+include(":app")
+EOF
+            fi
+          fi
+          
+          # Create gradle wrapper if missing
+          if [ ! -f "$PROJ_DIR/gradlew" ]; then
+            echo "Creating Gradle wrapper..."
+            cd "$PROJ_DIR"
+            gradle wrapper --gradle-version 8.5
+          fi
+          
+          echo "$PROJ_DIR" > project_dir.txt
 
       - name: Build APK
         run: |
-          PROJ_DIR=$(cat project_path.txt)
+          PROJ_DIR=$(cat project_dir.txt)
           cd "$PROJ_DIR"
-          
-          if [ -f "gradlew" ]; then
-            chmod +x gradlew
-            ./gradlew assembleRelease
-          else
-            gradle wrapper --gradle-version 8.5
-            chmod +x gradlew
-            ./gradlew assembleRelease
-          fi
+          chmod +x gradlew
+          ./gradlew assembleRelease --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Sheko-APK
-          path: extracted/**/build/outputs/apk/release/*.apk
+          path: project/**/build/outputs/apk/release/*.apk
+          if-no-files-found: warn
+          
