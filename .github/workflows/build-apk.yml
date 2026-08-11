@@ -20,93 +20,55 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Extract & Fix Project
+      - name: Extract ZIP
         run: |
           echo "=== Extracting ZIP ==="
           unzip -q "Sheko-Ready-To-Upload (1).zip" -d project
-          
-          echo "=== Project structure ==="
           find project -maxdepth 3 -type f | sort
-          
-          # Find project root
+
+      - name: Fix Gradle Config
+        run: |
           SETTINGS=$(find project -name "settings.gradle" -o -name "settings.gradle.kts" | head -1)
           PROJ_DIR=$(dirname "$SETTINGS")
-          echo "Project root: $PROJ_DIR"
+          echo "Project: $PROJ_DIR"
           
-          # Create project-level build.gradle if missing
+          # Create project build.gradle
           if [ ! -f "$PROJ_DIR/build.gradle" ] && [ ! -f "$PROJ_DIR/build.gradle.kts" ]; then
-            echo "Creating project-level build.gradle..."
-            cat > "$PROJ_DIR/build.gradle" << 'EOF'
-plugins {
-    id 'com.android.application' version '8.2.2' apply false
-}
-EOF
+            echo "plugins { id 'com.android.application' version '8.2.2' apply false }" > "$PROJ_DIR/build.gradle"
           fi
           
-          # Fix settings.gradle - add pluginManagement if missing
+          # Fix settings.gradle
           if [ -f "$PROJ_DIR/settings.gradle" ]; then
             if ! grep -q "pluginManagement" "$PROJ_DIR/settings.gradle"; then
-              echo "Adding pluginManagement to settings.gradle..."
-              cat > "$PROJ_DIR/settings.gradle" << 'EOF'
-pluginManagement {
-    repositories {
-        google()
-        mavenCentral()
-        gradlePluginPortal()
-    }
-}
-dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-    repositories {
-        google()
-        mavenCentral()
-    }
-}
-rootProject.name = "ShekoVoiceClone"
-include ':app'
-EOF
+              echo "pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }" > "$PROJ_DIR/settings.gradle"
+              echo "dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }" >> "$PROJ_DIR/settings.gradle"
+              echo "rootProject.name = 'ShekoVoiceClone'" >> "$PROJ_DIR/settings.gradle"
+              echo "include ':app'" >> "$PROJ_DIR/settings.gradle"
             fi
           fi
           
-          # Fix settings.gradle.kts if exists
+          # Fix settings.gradle.kts
           if [ -f "$PROJ_DIR/settings.gradle.kts" ]; then
             if ! grep -q "pluginManagement" "$PROJ_DIR/settings.gradle.kts"; then
-              echo "Adding pluginManagement to settings.gradle.kts..."
-              cat > "$PROJ_DIR/settings.gradle.kts" << 'EOF'
-pluginManagement {
-    repositories {
-        google()
-        mavenCentral()
-        gradlePluginPortal()
-    }
-}
-dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-    repositories {
-        google()
-        mavenCentral()
-    }
-}
-rootProject.name = "ShekoVoiceClone"
-include(":app")
-EOF
+              echo 'pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }' > "$PROJ_DIR/settings.gradle.kts"
+              echo 'dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }' >> "$PROJ_DIR/settings.gradle.kts"
+              echo 'rootProject.name = "ShekoVoiceClone"' >> "$PROJ_DIR/settings.gradle.kts"
+              echo 'include(":app")' >> "$PROJ_DIR/settings.gradle.kts"
             fi
           fi
           
-          # Create gradle wrapper if missing
-          if [ ! -f "$PROJ_DIR/gradlew" ]; then
-            echo "Creating Gradle wrapper..."
-            cd "$PROJ_DIR"
+          # Create wrapper
+          cd "$PROJ_DIR"
+          if [ ! -f "gradlew" ]; then
             gradle wrapper --gradle-version 8.5
           fi
-          
-          echo "$PROJ_DIR" > project_dir.txt
+          chmod +x gradlew
+          echo "$PROJ_DIR" > ../../project_dir.txt
 
       - name: Build APK
         run: |
           PROJ_DIR=$(cat project_dir.txt)
           cd "$PROJ_DIR"
-          chmod +x gradlew
           ./gradlew assembleRelease --stacktrace
 
       - name: Upload APK
@@ -115,4 +77,3 @@ EOF
           name: Sheko-APK
           path: project/**/build/outputs/apk/release/*.apk
           if-no-files-found: warn
-          
